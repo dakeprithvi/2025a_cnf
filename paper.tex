@@ -1,0 +1,96 @@
+\documentclass[fontsize=11pt]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{color}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{polynom}
+\usepackage{placeins}
+\usepackage{longtable}
+\usepackage{gensymb}
+\usepackage{tikz}
+\tikzset{every picture/.style={font=\normalsize}}
+\DeclareOldFontCommand{\rm}{\normalfont\rmfamily}{\mathrm}
+\DeclareOldFontCommand{\it}{\normalfont\rmfamily}{\mathrm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\hypersetup{colorlinks=false,
+            pdfborder={0 0 0}}
+\renewcommand{\thefootnote}{\alph{footnote}}
+\newcommand{\R}{\mathbb{R}}
+\usepackage{amsmath, bm}   % Extra math commands and environments from the AMS
+\usepackage{amssymb}   % Special symbols from the AMS
+\usepackage{amsthm}    % Enhanced theorem and proof environments from the AMS
+\usepackage{latexsym}  % A few extra LaTeX symbols
+\usepackage{rxn}
+\usepackage[version=4]{mhchem}
+\usepackage{cleveref}
+\usepackage{url}
+\providecommand{\email}{}
+\renewcommand{\email}[1]{\texttt{#1}}
+\usepackage{caption}
+\captionsetup{labelfont=bf, labelsep=period, labelformat=simple, labelsep=colon, figurename=Fig.}
+\usepackage[authoryear, round]{natbib}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{hypothesis}[theorem]{Hypothesis}
+\newtheorem{property}[theorem]{Property}
+
+%\newcommand{\tL}{\tilde{L}}
+
+\graphicspath{{./}{./figures/}{./figures/paper/}}
+
+\setcounter{topnumber}{2}              %% 2
+\setcounter{bottomnumber}{1}           %% 1
+\setcounter{totalnumber}{3}            %% 3
+\renewcommand{\topfraction}{0.9}       %% 0.7
+\renewcommand{\bottomfraction}{0.9}    %% 0.3
+\renewcommand{\textfraction}{0.1}      %% 0.2
+\renewcommand{\floatpagefraction}{.7}  %% 0.5
+
+\title{\bf{Neural Ordinary Differential Equations}}
+\author{Prithvi Dake\\
+Department of Chemical Engineering, University of California, Santa Barbara}
+\date{\textit{ME255NN: Neural Networks for modeling, optimization and control} \\
+\textit{Winter 2025}}
+
+\begin{document}
+
+\maketitle
+\section{Introduction}
+
+Conventional neural network architectures like RNNs and residual network
+resemble explicit Euler scheme to solve ODEs. Thus NODEs can be viewed as 
+the \textit{continuous} versions of such \textit{discretized} architectures.
+Now one problem with the continuous version is propagating the gradients during
+back-propagation while training. One way to solve this problem is augmenting
+the ODE with its sensitivity equations. Such a scheme saves precious memory that
+goes in storing intermediate gradients in brute-force back-prop. Thus, after
+overcoming the training problem, we can extend the NODE architecture to other 
+applications like the continuous version of normalizing flow and state-space models.
+
+Literature review (6 articles atleast)
+
+The report is structured as follows: We explain conventional NN architectures like
+RNN and ResNet and connect it to its continuous version called as NODE. We also show
+how we can handle back-prop for NODE. We also discuss continuous normalizing flows and
+NODE-based state-space models followed by some interesting case-studies. We finally 
+end the report with some critical conclusions and review of current developments.
+
+\section{NODEs and its application}
+\section{Case studies}
+\section{Conclusions}
+
+
+\newpage
+\FloatBarrier
+\bibliographystyle{abbrvnat}
+\bibliography{abbreviations,articles,books,unpub,proceedings}
+\end{document}
