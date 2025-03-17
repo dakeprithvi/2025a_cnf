@@ -21,7 +21,7 @@ DEFAULT_FIGURE_TYPE := paper
 # Set defaults for using backed up files vs. regenerating them. Can be
 # overridden locally by changing them in a file called Makefile.options.
 USE_MAT_BACKUPS := False
-USE_PICKLE_BACKUPS := False
+USE_PICKLE_BACKUPS := True
 USE_DIA_BACKUPS := False
 
 ## We don't need figure windows popping up.
@@ -101,7 +101,7 @@ DIA_SRC :=
 PY_MAT_SRC := 
 OCT_MAT_SRC := 
 MATLAB_MAT_SRC := 
-PY_PICKLE_SRC := 
+PY_PICKLE_SRC := ABC_solve.py
 
 ## JL_MAT_SRC. These are .jl files on which you run Julia to produce a .mat file.
 ## Note that Julia's .mat files are in an HDF5 format, so you will need to use
@@ -116,7 +116,7 @@ OCT_DAT_SRC :=
 
 ## PY_PLOT files are .py files that create .pdf plots.
 
-PY_PLOT := 
+PY_PLOT := ABC_plot.py
 
 ## PY_MOVIE files are .py files that create movies as a .pdf document.
 
