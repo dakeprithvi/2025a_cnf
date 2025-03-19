@@ -207,26 +207,29 @@ apply chain-rule).
     \label{fig:resnet}
 \end{figure}
 
-\subsection{Sensitivity or Adjoint Equation Methods}
+\subsection{Forward and backward Sensitivity/Adjoint methods}
+
+\subsubsection{Forward Sensitivity}
 \label{sec:sens}
 
-Here we give a quick overview of the sensitivity equations for ODEs. Consider following
+Here we give a quick overview of both the forward/backward sensitivity equations for ODEs. Consider following
 non-linear state-space model:
 
 \begin{align}
     \dot{x} &= f(x, u; \theta) \qquad x(0) = g(x_0; \theta)\notag \\
     y &= g(x, u; \theta)
+    \label{eq:ssode}
 \end{align}
 
 Assume $y=x$ i.e. full state measurement and hence we also know the initial condition
 $x_0$. Consider a least-squares objective to measure the fit to the data:
 
 \begin{align}
-    \min\limits_{\theta} V(x, u; \theta) = \norm{y - \hat{y}}^2 
+    \min\limits_{\theta} V(x) = \norm{x - \hat{x}}^2 
 \end{align}
 To propagate the gradient we need to solve the sensitivity equations:
 \begin{align}
-    \dfrac{\partial V(x, u; \theta)}{\partial \theta_j} &= -2 \sum_i (\hat{x} - x) \dfrac{\partial x_i}{\partial \theta_j} \notag \\ 
+    \dfrac{\partial V(x)}{\partial \theta_j} &= -2 \sum_i (\hat{x} - x) \dfrac{\partial x_i}{\partial \theta_j} \notag \\ 
     S_{ij} &= \dfrac{\partial x_i}{\partial \theta_j}
     \label{eq:sens}
 \end{align}
@@ -252,10 +255,13 @@ following augmented ODE system:
     \label{eq:augsens}
 \end{align}
 This augmented system can be solved using any ODE solver, allowing gradient 
-propagation without the need to store intermediate states. This key advantage 
-contributed to the popularity of Neural ODEs (NODEs), beyond their interpretation 
-as a continuous counterpart to Euler-step-based architectures like ResNets. We close 
-this section by a short example on solving the augmented ODE system. Consider, 
+propagation. However, if $\theta \in \R^{p}$ and $x \in \R^{n}$, we need to 
+solve $p \times n + 1$ equations i.e. the cost increases with $p$. Thus, forward
+sensitivity is not an efficient method to propagate gradients. However, we can circumvent
+the problem of storing intermediate states using backward sensitivity method discussed next. This key advantage 
+of backward adjoint method contributed to the popularity of Neural ODEs (NODEs), beyond their interpretation 
+as a continuous counterpart to Euler-step-based architectures like ResNets. We also show 
+a short example on solving the augmented ODE system for forward sensitivity. Consider, 
 following kinetics:
 \begin{align}
     \dot{c}_A &= -kc_A \notag \\
@@ -297,8 +303,54 @@ show a gradient descent update as follows:
         -2 (\hat{c}_A  - c_A)^T S_2
     \end{bmatrix}
 \end{align}
-Thus, we do no need to backprop but just solve the augmented ODE system once 
-in each optimal iteration unlike ResNets or RNNs. However, such a method is not 
+
+\subsubsection{Backward Sensitivity}
+
+In forward sensitivity since we solve the augmented ODE system, we do not need 
+to worry about time-steps taken by the ODE solver. However for backward sensitivity,
+it becomes a major problem. Here we show derivation of the adjoint equations for the
+continuous version rather than the previous discrete version (where the loss is obtained by summing).
+Consider following least-squares objective for \cref{eq:ssode} and the Lagrange functional:
+
+\begin{align}
+    V(x) &= \int_0^T (y - \hat{y})^2 dt = \int_0^T g(x, u; \theta)dt \notag \\
+    \mathcal{L} &= \int_0^T g dt + \int_0^T \lambda(t)^T \left(f - \dfrac{dx}{dt}\right) dt
+\end{align}
+Hence,
+\begin{align}
+    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \dfrac{\partial g}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} dt + 
+    \int_0^T \lambda^T \left(\dfrac{\partial f}{\partial x} \dfrac{\partial x}{\partial \theta^T} + \dfrac{\partial f}{\partial \theta} - \dfrac{\partial}{\partial \theta}\dfrac{dx}{dt}\right) dt \notag \\
+    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \dfrac{\partial g}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} dt + 
+    \int_0^T \lambda^T \left(\dfrac{\partial f}{\partial x} \dfrac{\partial x}{\partial \theta^T} + \dfrac{\partial f}{\partial \theta} - \dfrac{d}{dt}\dfrac{\partial x}{\partial \theta^T}\right) dt \notag \\
+    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \lambda^T \dfrac{\partial f}{\partial \theta} dt + \int_0^T \left(\dfrac{\partial g}{\partial x^T}
+    + \lambda^T \dfrac{\partial f}{\partial x} - \lambda^T\dfrac{d}{dt}\right)\dfrac{\partial x}{\partial \theta^T} dt
+\end{align}
+The term $\int_0^T{\lambda^T \dfrac{d}{dt} \dfrac{\partial x}{\partial \theta^T}dt}$ 
+can be solved using integration by parts. Thus, we have:
+
+\begin{align}
+    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \lambda^T \dfrac{\partial f}{\partial \theta} dt + \int_0^T \left(\dfrac{\partial g}{\partial x^T}
+    + \lambda^T \dfrac{\partial f}{\partial x} - \dfrac{d\lambda}{dt}\right)\dfrac{\partial x}{\partial \theta^T} dt - \lambda^T(0)\dfrac{\partial x}{\partial \theta^T}|_0
+    + \lambda^T(T)\dfrac{\partial x}{\partial \theta^T}|_T 
+    \label{eq:adjoint}
+\end{align}
+
+Now, the whole objective of backward sensitivity is to avoid calculating $\dfrac{\partial x}{\partial \theta^T}$.
+Also note that the equality constraint in the Langrange functional is always satisfied
+since we solve the ODE system. Thus we get to choose $\lambda$ such that the terms
+associated with $\dfrac{\partial x}{\partial \theta^T}$ vanish. Also, we can 
+easily calculate $\dfrac{\partial x}{\partial \theta^T}|_0$ but we would like to set
+$\dfrac{\partial x}{\partial \theta^T}|_T = 0$. Thus, we can construct following adjoint 
+equations:
+
+\begin{align}
+    \dfrac{d\lambda}{dt} &= \left(\dfrac{\partial g}{\partial x^T} + \lambda^T \dfrac{\partial f}{\partial x}\right)^T \notag \\
+    \lambda(T) &= 0
+\end{align}
+Referring to \cref{eq:adjoint}, we see $\dfrac{\partial V}{\partial \theta} = \dfrac{\partial \mathcal{L}}{\partial \theta} + \lambda^T(0)\dfrac{\partial x}{\partial \theta^T}|_0$.
+Thus, we do no need to backprop but just solve the augmented ODE system once forward 
+and once backward in each optimal iteration unlike ResNets or RNNs. Also, note that the number 
+of adjoint equations do not increase with parameters. However, such a method is not 
 an ultimate panacea. Such systems are still vulnerable to the problems commonly faced by
 numerical ODE solvers like stiffness, accuracy, etc. Sometimes we may end up 
 with noisy gradients which may lead to
