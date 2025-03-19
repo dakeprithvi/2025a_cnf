@@ -57,6 +57,13 @@ class ABC(nn.Module):
         )
         self.nn.apply(self.init_weights)
 
+        self.resnet = nn.Sequential(
+            nn.Linear(3, 8),
+            nn.Tanh(),
+            nn.Linear(8, 3)
+        )
+        self.resnet.apply(self.init_weights)
+
         # CNF
         self.cnf =  nn.Sequential(
             nn.Linear(3 , 8),
@@ -156,6 +163,60 @@ class ABC(nn.Module):
                 print(f'Iter {i}, Loss {loss.item()}')
         toc = time.time()
         print(f'Training time: {(toc - tic)/60} mins')
+
+
+    def resnet_plant(self, use_measure_y0=False, y0=None):
+        '''
+        Get the loss to train the resnet
+        '''
+        t = torch.linspace(self.t_start, self.t_end, self.nplot, dtype = self.dtype)
+        if use_measure_y0:
+            yt0 = self.measure[0, :]
+        elif y0 is not None:
+            yt0 = y0
+        else:
+            yt0 = torch.tensor([self.ca0, self.cb0, self.cc0], dtype = self.dtype)
+        
+        y_sol = [yt0]
+        for i in range(len(t) - 1):
+            next_y = self.resnet(y_sol[-1]) + y_sol[-1]
+            y_sol.append(next_y)
+        y_sol = torch.stack(y_sol)
+        #loss = torch.mean((y_sol - self.measure)**2)
+        return t, y_sol
+    
+    def resnet_loss(self, use_measure_y0=False):
+        '''
+        Get the loss to train the resnet
+        '''
+        t, y_sol = self.resnet_plant(use_measure_y0=use_measure_y0)
+        loss = torch.mean((y_sol - self.measure)**2)
+        return loss
+    
+    def resnet_train(self, niter = 1000):
+        '''
+        Train the resnet
+        '''
+        optimizer = optim.Adam(self.resnet.parameters(), lr=1e-2)
+        tic = time.time()
+        for i in range(niter):
+            optimizer.zero_grad()
+            loss = self.resnet_loss(use_measure_y0=True)
+            loss.backward()
+            optimizer.step()
+            if i % 100 == 0:
+                print(f'Iter {i}, Loss {loss.item()}')
+        toc = time.time()
+        print(f'Training time: {(toc - tic)/60} mins')
+
+    def resnet_lsim(self, use_measure_y0=False, y0=None):
+        '''
+        Mimic matlab's lsim: just re-solves the fitted model and returns the
+        solution. Take care to use the measured initial conditions for the neural
+        network since it is trained on the measured data.
+        '''
+        t, y_sol = self.resnet_plant(use_measure_y0=True)
+        return t.detach().numpy(), y_sol.detach().numpy()
 
     def lsim(self, use_measure_y0=False, y0=None):
         '''

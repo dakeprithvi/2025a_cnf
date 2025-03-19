@@ -23,8 +23,10 @@
 \usepackage{latexsym}  % A few extra LaTeX symbols
 \usepackage{rxn}
 \usepackage[version=4]{mhchem}
+\usepackage{algorithm, algpseudocode}
 \usepackage{cleveref}
 \usepackage{url}
+\newcommand{\norm}[1]{\lVert #1 \rVert}
 \providecommand{\email}{}
 \renewcommand{\email}[1]{\texttt{#1}}
 \usepackage{caption}
@@ -66,31 +68,302 @@ Department of Chemical Engineering, University of California, Santa Barbara}
 \maketitle
 \section{Introduction}
 
-Conventional neural network architectures like RNNs and residual network
-resemble explicit Euler scheme to solve ODEs. Thus NODEs can be viewed as 
-the \textit{continuous} versions of such \textit{discretized} architectures.
-Now one problem with the continuous version is propagating the gradients during
-back-propagation while training. One way to solve this problem is augmenting
-the ODE with its sensitivity equations. Such a scheme saves precious memory that
-goes in storing intermediate gradients in brute-force back-prop. Thus, after
-overcoming the training problem, we can extend the NODE architecture to other 
-applications like the continuous version of normalizing flow and state-space models.
+Conventional neural network architectures, such as recurrent neural networks 
+(RNNs) and residual networks (ResNets), can be viewed as discrete approximations
+of ordinary differential equations (ODEs), specifically resembling the explicit
+Euler scheme. Neural ODEs (NODEs) extend these architectures into a continuous 
+framework, providing a more principled way of modeling dynamical systems.
 
-Literature review (6 articles atleast)
+One major challenge in training NODEs is gradient propagation during backpropagation.
+Unlike traditional architectures, where intermediate states are stored for
+gradient computation, NODEs require solving an augmented ODE system, including 
+sensitivity equations, to compute gradients efficiently. This adjoint sensitivity 
+method significantly reduces memory requirements compared to brute-force 
+backpropagation. Overcoming this training limitation enables NODEs to be 
+applied in broader contexts, such as continuous normalizing flows and state-space 
+models.
 
-The report is structured as follows: We explain conventional NN architectures like
-RNN and ResNet and connect it to its continuous version called as NODE. We also show
-how we can handle back-prop for NODE. We also discuss continuous normalizing flows and
-NODE-based state-space models followed by some interesting case-studies. We finally 
-end the report with some critical conclusions and review of current developments.
+In this review, we cover fundamental concepts and recent advancements in NODEs. 
+We begin with a discussion on artificial neural networks (ANNs) implemented in 
+a physics-informed manner that does not involve recurrence or differential 
+modeling as shown by \cite{raissi:perdikaris:karniadakis:2019}. Next, we explore black-box 
+and discrete data-driven models for process systems using ResNets and RNNs. 
+Building on these foundations, we introduce sensitivity and adjoint equation 
+methods referring \cite{stapor:froehlich:hasenauer:2018}, and then introduce the 
+formal development of NODEs by \cite{chen:rubanova:bettencourt:duvenaud:2018}. 
 
-\section{NODEs and its application}
-\section{Case studies}
+We then review advanced applications, including generative latent models by
+\cite{rubanova:chen:duvenaud:2019}, continuous normalizing flows by
+\cite{grathwohl:chen:bettencourt:sutskever:duvenaud:2018}, and robustness 
+analyses of NODEs by \cite{yan:du:tan:feng:2019}. Finally, we discuss efficient 
+NODE training techniques compiled in \cite{finlay:jacobsen:nurbekyan:oberman:2020}.
+
+The structure of this report is as follows: We first introduce conventional 
+neural network architectures, such as RNNs and ResNets, and their connection 
+to NODEs. Next, we explain how backpropagation is handled in NODEs and discuss 
+applications in continuous normalizing flows and NODE-based state-space models. 
+This is followed by case studies demonstrating practical implementations. 
+The report concludes with a summary of key findings and an overview of ongoing 
+developments in the field.
+
+\section{Background}
+
+\subsection{ANNs for Physics-Informed Learning}
+
+In most engineering systems, we only have access to noisy measurements of 
+input-output data, typically originating from high-dimensional, nonlinear dynamic 
+systems. While such systems can be approximated using finite impulse response (FIR) 
+or autoregressive exogenous (ARX) models, these approaches often fail to respect 
+fundamental physical laws. One way to address this limitation is by penalizing 
+violations of these laws—a key idea behind physics-informed neural networks (PINNs), 
+as introduced by \cite{raissi:perdikaris:karniadakis:2019}.
+
+However, it is important to view PINNs not merely as data-driven models but 
+rather as a solution strategy for PDEs and ODEs. Fundamentally, they operate 
+as \textit{methods of weighted residuals}—specifically, collocation schemes—where 
+the residual is minimized at selected collocation points. While PINNs can be 
+used to learn certain model parameters, their results can be difficult to interpret 
+without a fundamental understanding of the underlying physics.
+
+Recent research has leveraged the PINN framework to enforce simple mass and energy 
+balance equations at steady-state, as this is often the only available information 
+in practical scenarios. \Cref{alg:PINNs} outlines the basic algorithm for training 
+a PINN applied to an ODE system.
+
+\begin{algorithm}[h]
+\caption{Training a Physics-Informed Neural Networks (PINNs)}
+\label{alg:PINNs}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Neural network architecture $f_{\theta}$
+\State \textbf{Physical Model:} $Lu=f \quad B_1 u = 0 \quad B_2 u = 0$
+\State \textbf{Initialize} neural network parameters $\theta$
+\Repeat
+    \State $\hat{u} = f_{\theta}(x,t)$
+    \State $V_{ODE} = \norm{L\hat{u} - f}_{2}$ 
+    \Comment{Prediction error minimization} 
+    \State $V_{BC} = \norm{B_1 \hat{u}}_{2} + \norm{B_2 \hat{u}}_{2}$
+    \Comment{Enforce boundary conditions}
+    \State $V = \lambda_1 V_{PDE}  + \lambda_2 V_{BC}$
+    \Comment{Combine loss terms}
+    \State $\theta \leftarrow \theta - \eta \nabla_{\theta} \mathcal{L}$
+    \Comment{Update $\theta$ using gradient descent}
+\Until{convergence criteria is met}
+\State \textbf{Return} trained model $f_{\theta}$
+\end{algorithmic}
+\end{algorithm}
+    
+\subsection{ResNets and RNNs for Process Systems}
+
+Most engineering systems operating near a steady state can be effectively modeled 
+using discrete linear time-invariant (DLTI) systems. These state-space models are 
+particularly well-suited for systems experiencing small perturbations.
+For highly nonlinear systems, ResNets and RNNs offer a similar state-space modeling 
+approach. In the system identification community, ResNet and RNN models are commonly 
+employed for this purpose, as illustrated in \cref{eq:resrnn}.
+
+\begin{align}
+    \hat{x}^+ &= \hat{x} + f_{\theta_{NN}} (\hat{x}, u) &\qquad \hat{x}^+ = f_{\theta_{NN}} (\hat{x}, u)\notag \\ 
+    \hat{y} &= g_{\theta_{NN}} (\hat{x}, u) &\qquad \hat{y} = g_{\theta_{NN}} (\hat{x}, u)
+    \label{eq:resrnn}
+\end{align}
+
+There are two approaches to learning the parameters $\theta_{NN}$ in \cref{eq:resrnn}: 
+\textit{multi-step prediction error minimization} and \textit{single-step prediction 
+error minimization}. 
+The single-step approach minimizes the prediction error at each time step independently, 
+while the multi-step approach considers the accumulated error over multiple time steps. 
+In practice, the multi-step method tends to be more stable, especially in the presence 
+of noisy measurements.
+
+Consider following \textit{true} model of linear chemical kinetics taking place
+in a well-mixed batch reactor with $c = (c_A, c_B, c_C)^T$ and initial concentration
+$c_0$:
+\begin{rxn*}{} 
+A \rlh[k_1][k_{-1}] 2 B, \qquad  B \rarrow[k_2] C
+\label{rxn:atobtoc}
+\end{rxn*}
+\begin{gather}
+\begin{bmatrix} \dot{c}_A \\ \dot{c}_B \\ \dot{c}_C \end{bmatrix}
+=\begin{bmatrix}
+    -k_{1} & k_{-1} & 0 \\
+    2k_{1} & 2k_{-1} - k_2 & 0 \\
+    0 & k_{2} & 0
+\end{bmatrix}
+\begin{bmatrix}  c_A \\ c_B \\ c_C \end{bmatrix} 
+\label{eq:atobtoc}
+\end{gather}
+Assume we have full-state measurement. Thus, a ResNet model can be easily trained
+to predict the concentration profile over time as shown in \cref{fig:resnet}. A similar
+example can be reproduced using an RNN model. Note we used multistep prediction error
+minimization. One disadvantage of such iterative models is that they require large memory
+to store intermediate states for gradient computation during backpropagation (since we basically
+apply chain-rule).
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.55\textwidth, page=2]{ABC_plot.pdf} 
+    \caption{Concentration profiles of species A, B, and C in a batch reactor. The 
+    discrete ResNet model does quite a good job to predict the concentration profiles.}
+    \label{fig:resnet}
+\end{figure}
+
+\subsection{Sensitivity or Adjoint Equation Methods}
+\label{sec:sens}
+
+Here we give a quick overview of the sensitivity equations for ODEs. Consider following
+non-linear state-space model:
+
+\begin{align}
+    \dot{x} &= f(x, u; \theta) \qquad x(0) = g(x_0; \theta)\notag \\
+    y &= g(x, u; \theta)
+\end{align}
+
+Assume $y=x$ i.e. full state measurement and hence we also know the initial condition
+$x_0$. Consider a least-squares objective to measure the fit to the data:
+
+\begin{align}
+    \min\limits_{\theta} V(x, u; \theta) = \norm{y - \hat{y}}^2 
+\end{align}
+To propagate the gradient we need to solve the sensitivity equations:
+\begin{align}
+    \dfrac{\partial V(x, u; \theta)}{\partial \theta_j} &= -2 \sum_i (\hat{x} - x) \dfrac{\partial x_i}{\partial \theta_j} \notag \\ 
+    S_{ij} &= \dfrac{\partial x_i}{\partial \theta_j}
+    \label{eq:sens}
+\end{align}
+where $S_{ij}$ is the sensitivity of model solution with parameter. We differentiate $S_{ij}$ to obtain:
+\begin{align}
+    \dfrac{d S_{ij}}{dt} &= \dfrac{d}{dt} \left(\dfrac{\partial x_i}{\partial \theta_j}\right) =
+    \dfrac{\partial}{\partial\theta_j} \left(\dfrac{d x_i}{dt}\right) = 
+    \dfrac{\partial }{\partial \theta_j} f_i(x; \theta) 
+\end{align}
+Using chain rule on $f$, we get following matrix equation:
+\begin{align}
+    \dfrac{dS}{dt} = f_xS + f_{\theta} \qquad  S(0) = g_\theta
+\end{align}
+We could easily calculate the initial condition 
+if we are using a state estimator by using the \cref{eq:sens}. Thus, we can construct
+following augmented ODE system:
+\begin{align}
+    \begin{bmatrix} \dot{x} \\ \dot{S} \end{bmatrix} = 
+    \begin{bmatrix} f(x, u; \theta) \\ f_xS + f_{\theta} \end{bmatrix}
+    \qquad
+    \begin{bmatrix} x(0) \\ S(0) \end{bmatrix} =
+    \begin{bmatrix} x_0 \\ g_\theta \end{bmatrix}
+    \label{eq:augsens}
+\end{align}
+This augmented system can be solved using any ODE solver, allowing gradient 
+propagation without the need to store intermediate states. This key advantage 
+contributed to the popularity of Neural ODEs (NODEs), beyond their interpretation 
+as a continuous counterpart to Euler-step-based architectures like ResNets. We close 
+this section by a short example on solving the augmented ODE system. Consider, 
+following kinetics:
+\begin{align}
+    \dot{c}_A &= -kc_A \notag \\
+    c_A(0) &= c_{A0}
+\end{align}
+Say we want to calculate sensitivities wrt $k, c_{A0}$. With reference to \cref{eq:augsens},
+for $S_1 = \dfrac{\partial c_A}{\partial k}$ and $S_2 = \dfrac{\partial c_A}{\partial c_{A0}}$,
+we have following augmented system:
+\begin{align}
+    \begin{bmatrix} 
+        \dot{c}_A \\
+        \dot{S_1} \\ 
+        \dot{S_2} 
+    \end{bmatrix} = 
+    \begin{bmatrix}
+        -kc_A \\
+        -kS_1 - c_A \\
+        -kS_2 \end{bmatrix}
+    \qquad
+    \begin{bmatrix} 
+        c_A(0) \\ 
+        S_1(0) \\ 
+        S_2(0) 
+    \end{bmatrix} =
+    \begin{bmatrix} 
+        c_{A0} \\ 
+        0 \\ 
+        1
+    \end{bmatrix}
+\end{align}
+If we were learning the parameter $k$ and initial condition $c_{A0}$, we could
+show a gradient descent update as follows:
+\begin{align}
+    \begin{bmatrix} k \\ c_{A0} \end{bmatrix} \leftarrow
+    \begin{bmatrix} k \\ c_{A0} \end{bmatrix}
+    - \eta 
+    \begin{bmatrix} 
+        -2 (\hat{c}_A  - c_A)^T S_1 \\ 
+        -2 (\hat{c}_A  - c_A)^T S_2
+    \end{bmatrix}
+\end{align}
+Thus, we do no need to backprop but just solve the augmented ODE system once 
+in each optimal iteration unlike ResNets or RNNs. However, such a method is not 
+an ultimate panacea. Such systems are still vulnerable to the problems commonly faced by
+numerical ODE solvers like stiffness, accuracy, etc. Sometimes we may end up 
+with noisy gradients which may lead to
+poor convergence.
+
+\subsection{Neural Ordinary Differential Equations}
+
+With the background established in \cref{sec:sens}, we can now introduce the algorithm
+for training NODEs. The key idea is to replace the right-hand side of the ODE system
+with a neural network. With auto-differentiation we can easily construct the augmented
+ODE system and solve it using any ODE solver. 
+
+\begin{algorithm}[h]
+\caption{Training a Neural Ordinary Differential Equation (NODE)}
+\label{alg:NODE}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Neural network architecture $f_{\theta}$
+\State \textbf{ODE:} 
+$
+    \begin{bmatrix} \dot{x} \\ \dot{S} \end{bmatrix} = 
+    \begin{bmatrix} f_\theta(x, u; \theta) \\ f_xS + f_{\theta} \end{bmatrix}
+    \qquad
+    \begin{bmatrix} x(0) \\ S(0) \end{bmatrix} =
+    \begin{bmatrix} x_0 \\ g_\theta \end{bmatrix}
+    \label{eq:augsens}
+$
+\Comment{Construct the augmented ODE system say, using \texttt{PyTorch}}
+\State \textbf{Initialize} neural network parameters $\theta$
+\Repeat
+    \State $\hat{x}_{aug} = \text{ODESolve}(f_{aug}, x_{aug}(0), t)$
+    \State $V = \norm{\hat{x} - x}_{2}$
+    \State $\theta \leftarrow \theta - \eta \nabla_{\theta} \mathcal{L}$
+\Until{convergence criteria is met}
+\State \textbf{Return} trained model $f_{\theta}$
+\end{algorithmic}
+\end{algorithm}
+We close the section with a same example as shown in \cref{eq:atobtoc} but now
+we use a NODE to predict the concentration profiles. The results are shown in
+\cref{fig:node}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.55\textwidth, page=1]{ABC_plot.pdf} 
+    \caption{Concentration profiles of species A, B, and C in a batch reactor. The
+    NODE model also does quite a good job to predict the concentration profiles. 
+    In fact for such simple problem, we hardly see any difference between ResNet and NODE.}
+    \label{fig:node}
+\end{figure}
+
+\subsection{Generative latent models based on continuous normalizing flows}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\textwidth, page=3]{ABC_plot.pdf} 
+\end{figure}
+
+\subsection{Robustness analysis of NODEs}
+
+\subsection{Efficient training techniques for NODEs}
+
 \section{Conclusions}
 
 
 \newpage
 \FloatBarrier
 \bibliographystyle{abbrvnat}
-\bibliography{abbreviations,articles,books,unpub,proceedings}
+\bibliography{cnf_bib, abbreviations,articles,books,unpub,proceedings}
 \end{document}

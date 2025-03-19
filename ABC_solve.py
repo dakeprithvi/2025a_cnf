@@ -13,6 +13,11 @@ abc.train(niter=500)
 # get predictions
 _, y_pred = abc.lsim(use_measure_y0=True)
 
+abc.resnet_train(niter=500)
+# get predictions
+_, y_pred_res = abc.resnet_lsim(use_measure_y0=True)
+
+
 # generate data for CNF
 abc.multi_solve(ntimes=10)
 # train the CNF
@@ -22,6 +27,7 @@ data = {}
 data['t'] = t
 data['y_meas'] = y_meas
 data['y_pred'] = y_pred
+data['y_pred_res'] = y_pred_res
 data['y'] = abc.y
 
 with open('ABC_solve.pickle', 'wb') as f:
