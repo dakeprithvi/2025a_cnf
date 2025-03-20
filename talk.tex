@@ -74,15 +74,15 @@
 \newcommand{\stoi}{\text{\boldmath $\nu$}}
 
 
-\title[NODEs]{Stirring Up Neural ODEs: A Chemical Engineer's Recipe for Dynamic Modeling
-}
+\title[NODEs]{Stirring Up Neural ODEs: A Chemical Engineer's perspective}
+
 
 \author[ME255NN--Dake]{Prithvi Dake}
 \institute [UCSB]{Department of Chemical
 Engineering\\
 \pgfuseimage{ucsb-logo}}
 
-\date{ME255NN Neural ordinary differential equations  \\
+\date{ME255NN Report  \\
 \today}
 
 %\AtBeginSection[]
@@ -197,7 +197,7 @@ Engineering\\
     \end{figure}
 \end{column}}
 {\begin{column}{0.3\textwidth}
-    \ If $x\in\R^n, \theta\in R^p$, $S = \dfrac{\partial x}{\partial \theta^T}\in\R^{n\times \textcolor{red}{p}}$
+    \ If $x\in\R^n, \theta\in \R^p$, $S = \dfrac{\partial x}{\partial \theta^T}\in\R^{n\times \textcolor{red}{p}}$
 \end{column}}
 \end{columns}
 \end{frame}
@@ -224,7 +224,7 @@ Engineering\\
         \begin{bmatrix} x_0 \\ \dfrac{\partial g}{\partial \theta^T} \end{bmatrix}
     \end{align*}
     \item Notice again: $S\in \R^{n\times p}$ i.e sensitivities we need to solve
-    increase \textcolor{red}{linearly} with $p$. Imagine how bad this could get for FNN with millions of parameters and 
+    for increase \textcolor{red}{linearly} with $p$. Imagine how bad this could get for FNN with millions of parameters and 
     states!
     \end{itemize}
 \end{frame}
@@ -234,15 +234,15 @@ Engineering\\
     \begin{figure}
         \centering
         \includegraphics[width=0.8\textwidth]{oldies.png}\\
-        \textit{One mastered control, one shaped space, one gambled with certainty}.\\
+        %\textit{One mastered control, one shaped space, one gambled with certainty}.\\
     \end{figure}
 \end{frame}
 
 \begin{frame}{Backward adjoint method}
     \begin{itemize}
-        \item Consider following optimization problem and the Lagrange functional:
+        \item Consider following optimization problem and the Lagrange functional given data $\tilde{x}$:
         \begin{align*}
-            \min\limits_{\theta}V(x) &= \int_0^t \norm{x - \hat{x}}^2 dt = \int_0^t g(x)dt \notag \\
+            \min\limits_{\theta}V(x) &= \int_0^t \norm{x - \tilde{x}}^2 dt = \int_0^t g(x)dt \notag \\
             \min\limits_{\theta, \lambda}\mathcal{L} &= \int_0^t g dt + \int_0^t \lambda(t)^T \left(f - \dfrac{dx}{dt}\right) dt
         \end{align*}
         \item The augmented system of ODEs is \footnote{Refer \cite{sengupta:friston:penny:2014} for paper and 
@@ -275,18 +275,19 @@ Engineering\\
     \begin{block}{}
         \begin{itemize}
             \item Consider $\dot{\lambda} = \pm 10 \lambda$ and $\lambda(0) = 0$
-            \item We see that the adjoint variable will either explode or vanish.
+            \item We see that the adjoint variable will either \textit{explode} or 
+            \textit{vanish}.
             This heavily impacts the learning problem. 
             \item The Jacobian $\dfrac{\partial f}{\partial x^T}$ can be ill-conditioned.
-            \item We still solve the adjoint equation by quadrature, thus numerical noise 
+            \item We solve the adjoint equation by quadrature, thus numerical noise 
             can still be a problem.
         \end{itemize}
     \end{block}
-    \begin{block}{Recent remedies}
+    \begin{block}{Remedies}
         \begin{itemize}
             \item Don't solve adjoint over long horizons, but rather 
-            small pieces and store the initial conditions for those intermediate
-            pieces.
+            small windows and store the initial conditions for those intermediate
+            windows.
             \item Popularly called as \textit{checkpointing} \footnote[frame]{\cite{zhuang:dvornek:li:tatikonda:papademetris:duncan:2020}}.
         \end{itemize}
     \end{block}
@@ -323,14 +324,103 @@ Engineering\\
 \begin{frame}{NODE}
     \begin{figure}
         \centering
-        \includegraphics[width=0.7\textwidth, page=1]{ABC_plot.pdf}\\
+        \includegraphics[width=0.65\textwidth, page=1]{ABC_plot.pdf}\\
         Concentration profiles of species A, B, and C in a batch reactor. The
     NODE model also does quite a good job to predict the concentration profiles. 
-    In fact for such simple problem, we hardly see any difference between ResNet and NODE.
+    In fact for such simple problem, we hardly see any difference between ResNet and NODE
+    \footnote{All the case studies in this report are built using \texttt{Torchdiffeq} by \cite{torchdiffeq}}.
     \end{figure}
 \end{frame}
 
-\begin{frame}{Generative latent model using CNF (Generative=Probabilistic)}
+\begin{frame}{Generative latent model using CNF}
+    \begin{itemize}
+        \item \textbf{Latent} = States in state-space model, since we usually cannot measure
+        them directly. Thus, we construct state-estimators.
+        \item \textbf{Generative latent} = State-space model that also propagates uncertainty
+        in estimates i.e. you can sample and \textit{generate} multiple trajectories after learning.
+        \item Surprise! Good old Kalman filter can be called a generative latent model!
+        \footnote{Refer \cite{rawlings:mayne:diehl:2020} for derivation of the Kalman filter using
+        Bayesian estimation principles.}
+        \item Consider a simple linear transform:
+        \begin{align*}
+            x &\in \mathcal{N}(m, \sigma^2 I) \\
+            y &= Ax \\
+            y &\in \mathcal{N}(Am, A\sigma^2 A^T)
+        \end{align*}
+        \item Bayesian approach: $\textcolor{blue}{p(y|x)} \sim p(x|y) \textcolor{red}{p(y)}$.
+        Assuming an \textcolor{red}{uniform prior} the likelihood problem is 
+        \[
+        \theta = \arg\max\limits_{\theta} \log p(x|y; \theta) \qquad p(x|y) = A^{-1} y \sim \mathcal{N}(m, \sigma^2I)        \]
+        \item Ofcourse, $A$ is assumed to be non-singular (i.e. unique mapping between $x$ and $y$;
+        \textit{bijective mapping}).
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Extending the bayesian framework for any non-linear transform}
+    \begin{itemize}
+        \item Consider following series of transformations (\textit{planar-flow}):
+        \[
+        x^+ = f_{NN}(x, u; \theta) \qquad x(0) \sim \mathcal{N}(m, \sigma^2I) \qquad x(t) \sim ?
+        \]
+        \item Use \textit{change of variables}, compute the
+        \textcolor{red}{determinant} of Jacobian ($\sim N(o^3)$) and conserve the probability mass as well
+        as maximize the likelihood.
+        \item Instead use continuous framework (\textit{continuous normalizing flow}) \footnote{Refer \cite{chen:rubanova:bettencourt:duvenaud:2018} for proof}:
+        \begin{align*}
+        \dfrac{dx}{dt} = f_{NN}(x, u; \theta) &\qquad x(0) \sim \mathcal{N}(m, \sigma^2I) \qquad x(t) \sim ?\\
+        \dfrac{\partial p(x)}{\partial t} &=  -\mathrm{tr}\nabla_x f_{NN}
+        \end{align*}
+        \item Cost to get the trace of Jacobian is now linear $\sim N(o)$
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Generative latent model for kinetics}
+    \begin{figure}
+        \centering
+        \includegraphics[width=\textwidth, page=3]{ABC_plot.pdf}\\
+    \end{figure}
+    \begin{align*}
+        \begin{bmatrix} \dot{c}_A \\ \dot{c}_B \\ \dot{c}_C \\ \dot{\log p} \end{bmatrix}
+        = \begin{bmatrix}
+            -k_{1}c_A + k_{-1}c_B  \\
+            2k_{1}c_A +  2k_{-1}c_B - k_2c_B \\
+            k_{2}c_B\\
+            -\mathrm{tr} \left(\dfrac{\partial f_{NN}}{\partial c^T}\right)
+        \end{bmatrix};
+        &\qquad
+        \begin{bmatrix} c_A(0) \\ c_B(0) \\ c_C(0) \\ \log p(0) \end{bmatrix} =
+        \begin{bmatrix} 1 \\ 0 \\ 0 \\ \log{\mathcal{N}([c_A, c_B, c_C]^T, \sigma^2I)} \end{bmatrix} \notag \\
+        \min\limits_{\theta} V(c) &= -\log p(c) + \norm{c - \tilde{c}}^2
+    \end{align*}
+\end{frame}
+
+\begin{frame}{Robustness analysis of NODEs \footnote{Refer \cite{yan:du:tan:feng:2019}}}
+    \begin{figure}[h]
+        \centering
+        \includegraphics[width=0.5\textwidth, page=5]{ABC_plot.pdf} \\
+        Robustness analysis of ODEs. We see that the solution $c_{B2}$ 
+        is sandwiched between two perturbed solutions $c_{B1}, c_{B3}$, 
+        though all approach the same steady-state. Also note that the slightly time-shifted
+        solution appears as a perturbed solution \footnote{Refer \cite{ascher:petzold:1998}
+        for well-posedness theorem of IVPs.}
+        \label{fig:robust}
+    \end{figure}
+    \center \textbf{Theoretical bound}
+    \begin{align*}
+        \norm{x(t+T)-x(t)} \leq \norm{\int_t^{t+T} f_{NN}(x, u; \theta) dt}
+    \end{align*} 
+\end{frame}
+
+\begin{frame}{How to train your NODE?}
+    
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.55\textwidth, page=6]{ABC_plot.pdf}  \\
+    If we train based only on prediction loss, the model can overfit.
+    However, if we penalize the Jacobian term ($\dfrac{\partial f_{NN}}{\partial x^T}$), we can regularize the model
+    to damp the oscillations \footnote{\cite{finlay:jacobsen:nurbekyan:oberman:2020} \\ 
+    Access the code for all figures at \url{https://github.com/dakeprithvi/2025a_cnf}}
+    \end{figure}
 \end{frame}
 
 \begin{frame}[allowframebreaks]{References}
