@@ -13,6 +13,7 @@
 \DeclareOldFontCommand{\it}{\normalfont\rmfamily}{\mathrm}
 \usepackage{mathtools}
 \usepackage{hyperref}
+\usepackage{pgfplots}
 \hypersetup{colorlinks=false,
             pdfborder={0 0 0}}
 \renewcommand{\thefootnote}{\alph{footnote}}
@@ -76,18 +77,18 @@ framework, providing a more principled way of modeling dynamical systems.
 
 One major challenge in training NODEs is gradient propagation during backpropagation.
 Unlike traditional architectures, where intermediate states are stored for
-gradient computation, NODEs require solving an augmented ODE system, including 
-sensitivity equations, to compute gradients efficiently. This adjoint sensitivity 
+gradient computation, NODEs require solving an augmented ODE system, involving
+adjoint sensitivity equations, to compute gradients efficiently. This adjoint sensitivity 
 method significantly reduces memory requirements compared to brute-force 
-backpropagation. Overcoming this training limitation enables NODEs to be 
+backpropagation \& forward sensitivity equations. Overcoming this training limitation enables NODEs to be 
 applied in broader contexts, such as continuous normalizing flows and state-space 
 models.
 
 In this review, we cover fundamental concepts and recent advancements in NODEs. 
 We begin with a discussion on artificial neural networks (ANNs) implemented in 
 a physics-informed manner that does not involve recurrence or differential 
-modeling as shown by \cite{raissi:perdikaris:karniadakis:2019}. Next, we explore black-box 
-and discrete data-driven models for process systems using ResNets and RNNs. 
+modeling as shown by \cite{raissi:perdikaris:karniadakis:2019}. Next, we explore
+discrete data-driven models for process systems using ResNets and RNNs. 
 Building on these foundations, we introduce sensitivity and adjoint equation 
 methods referring \cite{stapor:froehlich:hasenauer:2018}, and then introduce the 
 formal development of NODEs by \cite{chen:rubanova:bettencourt:duvenaud:2018}. 
@@ -102,7 +103,7 @@ The structure of this report is as follows: We first introduce conventional
 neural network architectures, such as RNNs and ResNets, and their connection 
 to NODEs. Next, we explain how backpropagation is handled in NODEs and discuss 
 applications in continuous normalizing flows and NODE-based state-space models. 
-This is followed by case studies demonstrating practical implementations. 
+Most of the sections give exemplar implementations. 
 The report concludes with a summary of key findings and an overview of ongoing 
 developments in the field.
 
@@ -134,21 +135,22 @@ a PINN applied to an ODE system.
 \caption{Training a Physics-Informed Neural Networks (PINNs)}
 \label{alg:PINNs}
 \begin{algorithmic}[1]
-\State \textbf{Input:} Neural network architecture $f_{\theta}$
-\State \textbf{Physical Model:} $Lu=f \quad B_1 u = 0 \quad B_2 u = 0$
+\State \textbf{Input:} Neural network architecture $f_{NN}$
+\State \textbf{Physical Model:} $Lx=f \quad B_1 x = 0 \quad B_2 x = 0$
+\Comment{True or known physics}
 \State \textbf{Initialize} neural network parameters $\theta$
 \Repeat
-    \State $\hat{u} = f_{\theta}(x,t)$
-    \State $V_{ODE} = \norm{L\hat{u} - f}_{2}$ 
+    \State $x = f_{NN}(x,t; \theta)$
+    \State $V_{ODE} = \norm{Lx - f}^{2}$ 
     \Comment{Prediction error minimization} 
-    \State $V_{BC} = \norm{B_1 \hat{u}}_{2} + \norm{B_2 \hat{u}}_{2}$
+    \State $V_{BC} = \norm{B_1 x}^{2} + \norm{B_2 x}^{2}$
     \Comment{Enforce boundary conditions}
     \State $V = \lambda_1 V_{PDE}  + \lambda_2 V_{BC}$
     \Comment{Combine loss terms}
-    \State $\theta \leftarrow \theta - \eta \nabla_{\theta} \mathcal{L}$
+    \State $\theta \leftarrow \theta - \eta \nabla_{\theta} V$
     \Comment{Update $\theta$ using gradient descent}
 \Until{convergence criteria is met}
-\State \textbf{Return} trained model $f_{\theta}$
+\State \textbf{Return} trained model $f_{NN}$
 \end{algorithmic}
 \end{algorithm}
     
@@ -159,15 +161,15 @@ using discrete linear time-invariant (DLTI) systems. These state-space models ar
 particularly well-suited for systems experiencing small perturbations.
 For highly nonlinear systems, ResNets and RNNs offer a similar state-space modeling 
 approach. In the system identification community, ResNet and RNN models are commonly 
-employed for this purpose, as illustrated in \cref{eq:resrnn}.
+employed for this purpose, as illustrated in \cref{eq:resrnn} on left and right respectively.
 
 \begin{align}
-    \hat{x}^+ &= \hat{x} + f_{\theta_{NN}} (\hat{x}, u) &\qquad \hat{x}^+ = f_{\theta_{NN}} (\hat{x}, u)\notag \\ 
-    \hat{y} &= g_{\theta_{NN}} (\hat{x}, u) &\qquad \hat{y} = g_{\theta_{NN}} (\hat{x}, u)
+    x^+ &= x + f_{NN} (x, u; \theta) &\qquad x^+ = f_{NN} (x, u; \theta)\notag \\ 
+    y &= g_{NN} (x, u; \theta) &\qquad y = g_{NN} (x, u; \theta)
     \label{eq:resrnn}
 \end{align}
 
-There are two approaches to learning the parameters $\theta_{NN}$ in \cref{eq:resrnn}: 
+There are two approaches to learning the parameters $\theta$ in \cref{eq:resrnn}: 
 \textit{multi-step prediction error minimization} and \textit{single-step prediction 
 error minimization}. 
 The single-step approach minimizes the prediction error at each time step independently, 
@@ -192,12 +194,14 @@ A \rlh[k_1][k_{-1}] 2 B, \qquad  B \rarrow[k_2] C
 \begin{bmatrix}  c_A \\ c_B \\ c_C \end{bmatrix} 
 \label{eq:atobtoc}
 \end{gather}
-Assume we have full-state measurement. Thus, a ResNet model can be easily trained
-to predict the concentration profile over time as shown in \cref{fig:resnet}. A similar
-example can be reproduced using an RNN model. Note we used multistep prediction error
-minimization. One disadvantage of such iterative models is that they require large memory
-to store intermediate states for gradient computation during backpropagation (since we basically
-apply chain-rule).
+Assume we have full-state measurement i.e.we measure all the three concentrations. Thus, 
+a ResNet model can be easily trained to predict the concentration profile over 
+time as shown in \cref{fig:resnet}. A similar example can be reproduced using an 
+RNN model. Note we used multi-step prediction error minimization. One disadvantage 
+of such iterative models is that they require large memory
+to store intermediate states for gradient propagation (since we basically
+apply chain-rule while differentiating through the solution). Another disadvantage is they 
+are discrete in nature and thus, can struggle when the data is not sampled at regular intervals.
 
 \begin{figure}
     \centering
@@ -207,67 +211,61 @@ apply chain-rule).
     \label{fig:resnet}
 \end{figure}
 
-\subsection{Forward and backward Sensitivity/Adjoint methods}
-
-\subsubsection{Forward Sensitivity}
+\subsection{Forward and backward sensitivity/adjoint methods}
 \label{sec:sens}
+\subsubsection{Forward Sensitivity}
 
-Here we give a quick overview of both the forward/backward sensitivity equations for ODEs. Consider following
-non-linear state-space model:
 
+Here we give a quick overview of both the forward and backward sensitivity/adjoint 
+equations for ODEs. Consider following non-linear state-space model:
 \begin{align}
-    \dot{x} &= f(x, u; \theta) \qquad x(0) = g(x_0; \theta)\notag \\
-    y &= g(x, u; \theta)
+    \dot{x} &= f(x, u; \theta) \qquad x(0) = g(x_0; \theta)\notag 
     \label{eq:ssode}
 \end{align}
-
-Assume $y=x$ i.e. full state measurement and hence we also know the initial condition
-$x_0$. Consider a least-squares objective to measure the fit to the data:
-
+We assume full state measurement (i.e. $y=x$). Consider a least-squares objective
+to measure the fit to the data ($\tilde{x}$):
 \begin{align}
-    \min\limits_{\theta} V(x) = \norm{x - \hat{x}}^2 
+    \min\limits_{\theta} V(x) = \norm{\tilde{x} - x}^2 
 \end{align}
 To propagate the gradient we need to solve the sensitivity equations:
 \begin{align}
-    \dfrac{\partial V(x)}{\partial \theta_j} &= -2 \sum_i (\hat{x} - x) \dfrac{\partial x_i}{\partial \theta_j} \notag \\ 
-    S_{ij} &= \dfrac{\partial x_i}{\partial \theta_j}
+    \dfrac{\partial V}{\partial \theta^T} &= -2 (\tilde{x} - x)^T \dfrac{\partial x}{\partial \theta^T} \notag \\ 
+    S &= \dfrac{\partial x}{\partial \theta^T}
     \label{eq:sens}
 \end{align}
-where $S_{ij}$ is the sensitivity of model solution with parameter. We differentiate $S_{ij}$ to obtain:
+where $S$ is the \textit{sensitivity} matrix of the model solutions with parameters. We differentiate $S$ to obtain:
 \begin{align}
-    \dfrac{d S_{ij}}{dt} &= \dfrac{d}{dt} \left(\dfrac{\partial x_i}{\partial \theta_j}\right) =
-    \dfrac{\partial}{\partial\theta_j} \left(\dfrac{d x_i}{dt}\right) = 
-    \dfrac{\partial }{\partial \theta_j} f_i(x; \theta) 
+    \dfrac{d S}{dt} &= \dfrac{d}{dt} \left(\dfrac{\partial x}{\partial \theta^T}\right) =
+    \dfrac{\partial}{\partial\theta^T} \left(\dfrac{d x}{dt}\right) = 
+    \dfrac{\partial }{\partial \theta^T} f
 \end{align}
 Using chain rule on $f$, we get following matrix equation:
 \begin{align}
-    \dfrac{dS}{dt} = f_xS + f_{\theta} \qquad  S(0) = g_\theta
+    \dfrac{dS}{dt} = \dfrac{\partial f}{\partial x^T}S + \dfrac{\partial f}{\partial \theta^T} \qquad  S(0) = \dfrac{\partial g}{\partial \theta^T}
 \end{align}
-We could easily calculate the initial condition 
-if we are using a state estimator by using the \cref{eq:sens}. Thus, we can construct
-following augmented ODE system:
+Thus, we can construct following augmented ODE system:
 \begin{align}
     \begin{bmatrix} \dot{x} \\ \dot{S} \end{bmatrix} = 
-    \begin{bmatrix} f(x, u; \theta) \\ f_xS + f_{\theta} \end{bmatrix}
+    \begin{bmatrix} f \\ \dfrac{\partial f}{\partial x^T}S + \dfrac{\partial f}{\partial \theta^T} \end{bmatrix}
     \qquad
     \begin{bmatrix} x(0) \\ S(0) \end{bmatrix} =
-    \begin{bmatrix} x_0 \\ g_\theta \end{bmatrix}
-    \label{eq:augsens}
+    \begin{bmatrix} x_0 \\ \dfrac{\partial g}{\partial \theta^T} \end{bmatrix}
+    \label{eq:augsensode}
 \end{align}
 This augmented system can be solved using any ODE solver, allowing gradient 
 propagation. However, if $\theta \in \R^{p}$ and $x \in \R^{n}$, we need to 
-solve $p \times n + 1$ equations i.e. the cost increases with $p$. Thus, forward
+solve $S \in \R^{n+p}$ equations i.e. the cost increases with $p$. Thus, forward
 sensitivity is not an efficient method to propagate gradients. However, we can circumvent
-the problem of storing intermediate states using backward sensitivity method discussed next. This key advantage 
-of backward adjoint method contributed to the popularity of Neural ODEs (NODEs), beyond their interpretation 
-as a continuous counterpart to Euler-step-based architectures like ResNets. We also show 
+the problem of linear increase in sensitivity equations using backward adjoint equations. This key advantage 
+of backward adjoint method contributed to the feasibility of Neural ODEs (NODEs), beyond their interpretation 
+as a continuous counterpart to Euler-step based architectures like ResNets. We next show 
 a short example on solving the augmented ODE system for forward sensitivity. Consider, 
 following kinetics:
 \begin{align}
     \dot{c}_A &= -kc_A \notag \\
     c_A(0) &= c_{A0}
 \end{align}
-Say we want to calculate sensitivities wrt $k, c_{A0}$. With reference to \cref{eq:augsens},
+Say we want to calculate sensitivities wrt $k$ and $c_{A0}$. With reference to \cref{eq:augsensode},
 for $S_1 = \dfrac{\partial c_A}{\partial k}$ and $S_2 = \dfrac{\partial c_A}{\partial c_{A0}}$,
 we have following augmented system:
 \begin{align}
@@ -306,55 +304,82 @@ show a gradient descent update as follows:
 
 \subsubsection{Backward Sensitivity}
 
-In forward sensitivity since we solve the augmented ODE system, we do not need 
-to worry about time-steps taken by the ODE solver. However for backward sensitivity,
-it becomes a major problem. Here we show derivation of the adjoint equations for the
-continuous version rather than the previous discrete version (where the loss is obtained by summing).
+In this section we redefine the objective function as an integral over time.
+The integral formulation allows us to derive the adjoint equation.
 Consider following least-squares objective for \cref{eq:ssode} and the Lagrange functional:
 
 \begin{align}
-    V(x) &= \int_0^T (y - \hat{y})^2 dt = \int_0^T g(x, u; \theta)dt \notag \\
-    \mathcal{L} &= \int_0^T g dt + \int_0^T \lambda(t)^T \left(f - \dfrac{dx}{dt}\right) dt
+    \min\limits_{\theta}V(x) &= \int_0^t \norm{x - \hat{x}}^2 dt = \int_0^t g(x)dt \notag \\
+    \min\limits_{\theta, \lambda}\mathcal{L} &= \int_0^t g dt + \int_0^t \lambda(t)^T \left(f - \dfrac{dx}{dt}\right) dt
 \end{align}
 Hence,
 \begin{align}
-    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \dfrac{\partial g}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} dt + 
-    \int_0^T \lambda^T \left(\dfrac{\partial f}{\partial x} \dfrac{\partial x}{\partial \theta^T} + \dfrac{\partial f}{\partial \theta} - \dfrac{\partial}{\partial \theta}\dfrac{dx}{dt}\right) dt \notag \\
-    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \dfrac{\partial g}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} dt + 
-    \int_0^T \lambda^T \left(\dfrac{\partial f}{\partial x} \dfrac{\partial x}{\partial \theta^T} + \dfrac{\partial f}{\partial \theta} - \dfrac{d}{dt}\dfrac{\partial x}{\partial \theta^T}\right) dt \notag \\
-    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \lambda^T \dfrac{\partial f}{\partial \theta} dt + \int_0^T \left(\dfrac{\partial g}{\partial x^T}
-    + \lambda^T \dfrac{\partial f}{\partial x} - \lambda^T\dfrac{d}{dt}\right)\dfrac{\partial x}{\partial \theta^T} dt
+    \dfrac{\partial \mathcal{L}}{\partial \theta^T} &= \int_0^t \dfrac{\partial g}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} dt + 
+    \int_0^t \lambda^T \left(\dfrac{\partial f}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} + \dfrac{\partial f}{\partial \theta^T} - \dfrac{\partial}{\partial \theta^T}\dfrac{dx}{dt}\right) dt \notag \\
+    \dfrac{\partial \mathcal{L}}{\partial \theta^T} &= \int_0^t \dfrac{\partial g}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} dt + 
+    \int_0^t \lambda^T \left(\dfrac{\partial f}{\partial x^T} \dfrac{\partial x}{\partial \theta^T} + \dfrac{\partial f}{\partial \theta^T} - \dfrac{d}{dt}\dfrac{\partial x}{\partial \theta^T}\right) dt \notag \\
+    \dfrac{\partial \mathcal{L}}{\partial \theta^T} &= \int_0^t \lambda^T \dfrac{\partial f}{\partial \theta^T} dt + \int_0^t \left(\dfrac{\partial g}{\partial x^T}
+    + \lambda^T \dfrac{\partial f}{\partial x^T} - \lambda^T\dfrac{d}{dt}\right)\dfrac{\partial x}{\partial \theta^T} dt
 \end{align}
-The term $\int_0^T{\lambda^T \dfrac{d}{dt} \dfrac{\partial x}{\partial \theta^T}dt}$ 
+The term $\int_0^t{\lambda^T \dfrac{d}{dt} \dfrac{\partial x}{\partial \theta^T}dt}$ 
 can be solved using integration by parts. Thus, we have:
 
 \begin{align}
-    \dfrac{\partial \mathcal{L}}{\partial \theta} &= \int_0^T \lambda^T \dfrac{\partial f}{\partial \theta} dt + \int_0^T \left(\dfrac{\partial g}{\partial x^T}
-    + \lambda^T \dfrac{\partial f}{\partial x} - \dfrac{d\lambda}{dt}\right)\dfrac{\partial x}{\partial \theta^T} dt - \lambda^T(0)\dfrac{\partial x}{\partial \theta^T}|_0
-    + \lambda^T(T)\dfrac{\partial x}{\partial \theta^T}|_T 
+    \dfrac{\partial \mathcal{L}}{\partial \theta^T} &= \int_0^t \lambda^T \dfrac{\partial f}{\partial \theta^T} dt + \int_0^t \left(\dfrac{\partial g}{\partial x^T}
+    + \lambda^T \dfrac{\partial f}{\partial x^T} + \dfrac{d\lambda^T}{dt}\right)\dfrac{\partial x}{\partial \theta^T} dt + \lambda^T(0)\dfrac{\partial x}{\partial \theta^T}|_0
+    - \lambda^T(T)\dfrac{\partial x}{\partial \theta^T}|_t
     \label{eq:adjoint}
 \end{align}
 
 Now, the whole objective of backward sensitivity is to avoid calculating $\dfrac{\partial x}{\partial \theta^T}$.
 Also note that the equality constraint in the Langrange functional is always satisfied
-since we solve the ODE system. Thus we get to choose $\lambda$ such that the terms
+since we \textit{solve} the ODE system. Thus we get to choose $\lambda$ such that the terms
 associated with $\dfrac{\partial x}{\partial \theta^T}$ vanish. Also, we can 
 easily calculate $\dfrac{\partial x}{\partial \theta^T}|_0$ but we would like to set
-$\dfrac{\partial x}{\partial \theta^T}|_T = 0$. Thus, we can construct following adjoint 
+$\dfrac{\partial x}{\partial \theta^T}|_t = 0$. Thus, we can construct following adjoint 
 equations:
 
 \begin{align}
-    \dfrac{d\lambda}{dt} &= \left(\dfrac{\partial g}{\partial x^T} + \lambda^T \dfrac{\partial f}{\partial x}\right)^T \notag \\
+    \dfrac{d\lambda^T}{dt} &= -\dfrac{\partial g}{\partial x^T} - \lambda^T \dfrac{\partial f}{\partial x^T} \notag \\
     \lambda(T) &= 0
 \end{align}
-Referring to \cref{eq:adjoint}, we see $\dfrac{\partial V}{\partial \theta} = \dfrac{\partial \mathcal{L}}{\partial \theta} + \lambda^T(0)\dfrac{\partial x}{\partial \theta^T}|_0$.
-Thus, we do no need to backprop but just solve the augmented ODE system once forward 
-and once backward in each optimal iteration unlike ResNets or RNNs. Also, note that the number 
-of adjoint equations do not increase with parameters. However, such a method is not 
+Referring to \cref{eq:adjoint}, we see $\dfrac{\partial V}{\partial \theta^T} = 
+\dfrac{\partial \mathcal{L}}{\partial \theta^T}$.
+The original NODE paper uses objective function of the form:
+\begin{align}
+    \min\limits_{\theta}V(x) = \int_0^t \norm{x - \hat{x}}^2 \delta(t) dt
+\end{align}
+Hence, the adjoint equations for their case are:
+\begin{align}
+    \dfrac{d\lambda^T}{dt} &= -\lambda^T \dfrac{\partial f}{\partial x^T} \notag \\
+    \lambda(t)^T &= - \dfrac{\partial g}{\partial x^T}|_t = -\dfrac{\partial V}{\partial x^T}|_t \notag \\
+    \dfrac{\partial V}{\partial \theta^T} &= \lambda^T(0)\dfrac{\partial x}{\partial \theta^T}|_0 + \int_0^t   \lambda^T \dfrac{\partial f}{\partial \theta^T} dt
+    \label{eq:adjointnode}
+\end{align}
+Hence, $\lambda = \dfrac{\partial V}{\partial x}$ as we see from the terminal 
+condition in \cref{eq:adjointnode}.
+Thus, we need to solve the augmented ODE system once forward 
+and once backward in each optimal iteration. We need a forward pass to store
+the value of $\dfrac{\partial g}{\partial x^T}|_t$ and $x_t$. Also, note that the number 
+of adjoint equations do not increase with parameters (i.e $\lambda \in \R^n$ unlike $S \in \R^{n \times p+1}$). 
+We can evaluate the gradient in one go as shown in \cref{eq:adjointnode}. 
+Some recent solutions to storing intermediate points involve \textit{checkpointing}
+at only few points. However, such a method is not 
 an ultimate panacea. Such systems are still vulnerable to the problems commonly faced by
-numerical ODE solvers like stiffness, accuracy, etc. Sometimes we may end up 
-with noisy gradients which may lead to
-poor convergence.
+numerical ODE solvers like stiffness, accuracy, etc. One can analyze the stiffness
+of the adjoint ODE by simply inspecting the eignevalues of the Jacobian matrix $\dfrac{\partial f}{\partial x^T}$
+at different time points. Sometimes we may end up with noisy gradients which may lead to poor convergence.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.55\textwidth, page=4]{ABC_plot.pdf} 
+    \caption{Consider $\dot{\lambda} = -e \lambda$ for $e = \pm 10$. 
+    We see that the adjoint variable will either explode or vanish.
+    Thus $\dfrac{\partial V}{\partial \theta} = \lambda(0) = 10^{\pm 5}$. 
+    A simple example to show how an ill-conditioned
+    adjoint system can lead to poor convergence.}
+    \label{fig:node}
+\end{figure}
 
 \subsection{Neural Ordinary Differential Equations}
 
@@ -367,27 +392,30 @@ ODE system and solve it using any ODE solver.
 \caption{Training a Neural Ordinary Differential Equation (NODE)}
 \label{alg:NODE}
 \begin{algorithmic}[1]
-\State \textbf{Input:} Neural network architecture $f_{\theta}$
+\State \textbf{Input:} Neural network architecture $f_{NN}$
 \State \textbf{ODE:} 
 $
-    \begin{bmatrix} \dot{x} \\ \dot{S} \end{bmatrix} = 
-    \begin{bmatrix} f_\theta(x, u; \theta) \\ f_xS + f_{\theta} \end{bmatrix}
+    \begin{bmatrix} \dot{x} \\ \dot{\lambda^T} \end{bmatrix} = 
+    \begin{bmatrix} f_{NN} \\ -\lambda^T \dfrac{\partial f_{NN}}{\partial x^T}\end{bmatrix}
     \qquad
-    \begin{bmatrix} x(0) \\ S(0) \end{bmatrix} =
-    \begin{bmatrix} x_0 \\ g_\theta \end{bmatrix}
+    \begin{bmatrix} x(t) \\ \lambda(t) \end{bmatrix} =
+    \begin{bmatrix} x_t \\ - \dfrac{\partial g}{\partial x^T}|_{t} \end{bmatrix}
     \label{eq:augsens}
 $
-\Comment{Construct the augmented ODE system say, using \texttt{PyTorch}}
+\Comment{Construct the augmented ODE using \texttt{PyTorch}}
 \State \textbf{Initialize} neural network parameters $\theta$
 \Repeat
-    \State $\hat{x}_{aug} = \text{ODESolve}(f_{aug}, x_{aug}(0), t)$
-    \State $V = \norm{\hat{x} - x}_{2}$
-    \State $\theta \leftarrow \theta - \eta \nabla_{\theta} \mathcal{L}$
+    \State $V = \norm{\hat{x} - x}^2$
+    \Comment{Forward solve to get the loss $V$}
+    \State $\hat{x}_{aug} = \text{ODESolve}(f_{aug}, x_{aug}(0), T, t_0)$
+    \State $\dfrac{\partial V}{\partial \theta^T} = \lambda^T(0)\dfrac{\partial x}{\partial \theta^T}|_0 + \int_0^t   \lambda^T \dfrac{\partial f}{\partial \theta^T} dt$
+    \Comment{Construct the gradient wrt loss}
+    \State $\theta \leftarrow \theta - \eta \nabla_{\theta} V$
 \Until{convergence criteria is met}
-\State \textbf{Return} trained model $f_{\theta}$
+\State \textbf{Return} trained model $f_{NN}$
 \end{algorithmic}
 \end{algorithm}
-We close the section with a same example as shown in \cref{eq:atobtoc} but now
+We close the section with the same example as shown in \cref{eq:atobtoc} but now
 we use a NODE to predict the concentration profiles. The results are shown in
 \cref{fig:node}.
 
@@ -402,14 +430,71 @@ we use a NODE to predict the concentration profiles. The results are shown in
 
 \subsection{Generative latent models based on continuous normalizing flows}
 
+The NODE paper applies the same motivation to develop continuous normalizing flows.
+Interested reader can refer the paper for theorem on instantaneous change of variables.
+The key idea is the neural ODE rhs is trained to conserve the probability density 
+while maximizing log-likelihood to describe the data. The framework can be described 
+as follows:
+\begin{align}
+    \begin{bmatrix}
+        x_0 \\
+        \log p(x) - \log p(x_0)
+    \end{bmatrix}
+    =
+    \int_{t}^{0}
+    \begin{bmatrix}
+        f_{NN}(x, u; \theta) \\
+        -\mathrm{Tr} \left(\dfrac{\partial f_{NN}}{\partial x^T}\right)
+    \end{bmatrix} dt;
+    \qquad
+    \begin{bmatrix}
+        x(t) \\
+        \log p(x) - \log p(x_t)
+    \end{bmatrix}   
+    =
+    \begin{bmatrix}
+        x_t \\
+        0
+    \end{bmatrix}
+\end{align}
+We assume, $x_0 \sim \mathcal{N}(0, \sigma^2I)$ and thus the objective function is:
+\begin{align}
+    \min\limits_{\theta} V(x) = -\log p(x)
+\end{align}
+That's a powerful framework to model distributions (say a human face composed of pixels).
+However, we are more interested in using similar generative framework for chemical kinetics. 
+Thus, we again use the same example as shown in \cref{eq:atobtoc} but we also model 
+how the uncertainty in the initial conditions decreases as we add more measurement points.
+The results are shown in \cref{fig:cnf}. The system we solve is:
+
+\begin{align}
+    \begin{bmatrix} \dot{c}_A \\ \dot{c}_B \\ \dot{c}_C \\ \dot{\log p} \end{bmatrix}
+    = \begin{bmatrix}
+        -k_{1}c_A + k_{-1}c_B  \\
+        2k_{1}c_A +  2k_{-1}c_B - k_2c_B \\
+        k_{2}c_B\\
+        -\mathrm{Tr} \left(\dfrac{\partial f_{NN}}{\partial x^T}\right)
+    \end{bmatrix};
+    &\qquad
+    \begin{bmatrix} c_A(0) \\ c_B(0) \\ c_C(0) \\ \log p(0) \end{bmatrix} =
+    \begin{bmatrix} 1 \\ 0 \\ 0 \\ \log{\mathcal{N}([c_A, c_B, c_C]^T, \sigma^2I)} \end{bmatrix} \notag \\
+    \min\limits_{\theta} V(x) &= -\log p(x) + \norm{c - \tilde{c}}^2
+\end{align}
+The author would like to draw parallels to the classical Kalman filter that also does the similar job,
+but the continuous normalizing flow can be applied to any non-linear dynamical system.
 \begin{figure}[h]
     \centering
     \includegraphics[width=1\textwidth, page=3]{ABC_plot.pdf} 
+    \caption{Results for chemical kinetics modeled as continuous normalizing
+    flow. We start with a high uncertainty in the initial conditions. The spread in 
+    probability decreases as we add more measurement points. Readers would like
+    to draw similarities to Kalman filter, only in this case we can apply it to 
+    any non-linear continuous dynamical system.}
+    \label{fig:cnf}
 \end{figure}
 
 \subsection{Robustness analysis of NODEs}
 
-\subsection{Efficient training techniques for NODEs}
 
 \section{Conclusions}
 
