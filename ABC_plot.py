@@ -67,3 +67,18 @@ with PdfPages('ABC_plot.pdf') as pdf:
     pdf.savefig()
     plt.show()
     plt.close()
+
+    par = 10
+    plt.figure(figsize=figsize)
+    t = np.linspace(0, 1, 100)
+    exppos = np.exp(par*t)
+    expneg = np.exp(-par*t)
+    t = np.linspace(1, 0, 100)
+    plt.semilogy(t, exppos, '-', color='red', label='Exploding grad')
+    plt.semilogy(t, expneg, '-', color='blue', label='Vanishing grad')
+    plt.xlabel('$t$')
+    plt.ylabel('$\lambda$', rotation=0)
+    plt.legend()
+    plt.tight_layout()
+    pdf.savefig()
+    plt.close()
