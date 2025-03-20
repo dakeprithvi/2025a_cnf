@@ -14,6 +14,7 @@ t = data['t']
 y_meas = data['y_meas']
 y_pred = data['y_pred']
 y_pred_res = data['y_pred_res']
+y_pred_pnn = data['y_pnn']
 y = data['y']
 y[:,:,3] = np.exp(y[:,:,3])
 
@@ -164,3 +165,30 @@ with PdfPages('ABC_plot.pdf') as pdf:
     plt.tight_layout()
     pdf.savefig()
     plt.close()
+
+    plt.figure(figsize=figsize)
+    t = data['t']
+    plt.plot(t, y_meas[:,0], 'o', color='red', mfc='none', label='$c_A$')
+    plt.plot(t, y_meas[:,1], 'o', color='blue', mfc='none', label='$c_B$')
+    plt.plot(t, y_meas[:,2], 'o', color='green', mfc='none', label='$c_C$')
+    plt.xlabel('$t$')
+    plt.ylabel('$C$', rotation=0)
+    plt.legend(loc='lower right')
+    plt.tight_layout()
+    pdf.savefig()
+    plt.close()
+
+    plt.figure(figsize=figsize)
+    plt.plot(t, y_meas[:,0], 'o', color='red', mfc='none')
+    plt.plot(t, y_pred_pnn[:,0], '-', color='red')
+    plt.plot(t, y_meas[:,1], 'o', color='blue', mfc='none')
+    plt.plot(t, y_pred_pnn[:,1], '-', color='blue')
+    plt.plot(t, y_meas[:,2], 'o', color='green', mfc='none')
+    plt.plot(t, y_pred_pnn[:,2], '-', color='green')
+    plt.xlabel('$t$')
+    plt.ylabel('$C$', rotation=0)
+    plt.tight_layout()
+    pdf.savefig()
+    plt.close()
+
+    

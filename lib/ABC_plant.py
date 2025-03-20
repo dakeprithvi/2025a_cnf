@@ -72,6 +72,13 @@ class ABC(nn.Module):
         )
         self.cnf.apply(self.init_weights)
 
+        self.pnn = nn.Sequential(
+            nn.Linear(1, 8),
+            nn.Tanh(),
+            nn.Linear(8, 3)
+        )
+        self.pnn.apply(self.init_weights)
+
      
     @staticmethod
     def init_weights(m):
@@ -311,6 +318,47 @@ class ABC(nn.Module):
         toc = time.time()
         print(f'Training time: {(toc - tic)/60} mins')
         self.y = self.y.detach().numpy()
+
+    
+    def pnn_loss(self):
+        '''
+        Compute the PINN loss for fitting the kinetics ODE.
+        '''
+        t = torch.linspace(self.t_start, self.t_end, self.nplot, dtype=self.dtype, requires_grad=True)
+
+        c_pred = self.pnn(t.reshape(-1,1))
+        c_a, c_b, c_c = c_pred[:, 0], c_pred[:, 1], c_pred[:, 2]
+
+        dca_dt = torch.autograd.grad(c_a, t, grad_outputs=torch.ones_like(c_a), create_graph=True)[0]
+        dcb_dt = torch.autograd.grad(c_b, t, grad_outputs=torch.ones_like(c_b), create_graph=True)[0]
+        dcc_dt = torch.autograd.grad(c_c, t, grad_outputs=torch.ones_like(c_c), create_graph=True)[0]
+
+        ode1 = torch.mean((dca_dt - (-self.k1 * c_a + self.k_1 * c_b))**2)
+        ode2 = torch.mean((dcb_dt - (2 * self.k1 * c_a - (2 * self.k_1 + self.k2) * c_b))**2)  
+        ode3 = torch.mean((dcc_dt - (self.k2 * c_b))**2)
+
+        pred_loss = torch.mean((c_pred - self.measure)**2)
+        self.loss_for_pnn = ode1 + ode2 + ode3 + pred_loss
+        self.c_pred = c_pred
+        return self.loss_for_pnn
+    
+    def pnn_train(self, niter = 1000):
+        '''
+        Train the PINN
+        '''
+        optimizer = optim.Adam(self.pnn.parameters(), lr=1e-2)
+        tic = time.time()
+        for i in range(niter):
+            optimizer.zero_grad()
+            loss = self.pnn_loss()
+            loss.backward()
+            optimizer.step()
+            if i % 100 == 0:
+                print(f'Iter {i}, Loss {loss.item()}')
+        toc = time.time()
+        print(f'Training time: {(toc - tic)/60} mins')
+        self.c_pred = self.c_pred.detach().numpy()
+
 
     
 
