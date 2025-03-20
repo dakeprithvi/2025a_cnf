@@ -114,14 +114,14 @@ developments in the field.
 In most engineering systems, we only have access to noisy measurements of 
 input-output data, typically originating from high-dimensional, nonlinear dynamic 
 systems. While such systems can be approximated using finite impulse response (FIR) 
-or autoregressive exogenous (ARX) models, these approaches often fail to respect 
+or autoregressive exogenous (ARX) models \citep{ljung:1999}, these approaches often fail to respect 
 fundamental physical laws. One way to address this limitation is by penalizing 
 violations of these laws—a key idea behind physics-informed neural networks (PINNs), 
 as introduced by \cite{raissi:perdikaris:karniadakis:2019}.
 
 However, it is important to view PINNs not merely as data-driven models but 
 rather as a solution strategy for PDEs and ODEs. Fundamentally, they operate 
-as \textit{methods of weighted residuals}—specifically, collocation schemes—where 
+as \textit{methods of weighted residuals} \citep{villadsen:stewart:1967}—specifically, collocation schemes—where 
 the residual is minimized at selected collocation points. While PINNs can be 
 used to learn certain model parameters, their results can be difficult to interpret 
 without a fundamental understanding of the underlying physics.
@@ -227,7 +227,7 @@ to measure the fit to the data ($\tilde{x}$):
 \begin{align}
     \min\limits_{\theta} V(x) = \norm{\tilde{x} - x}^2 
 \end{align}
-To propagate the gradient we need to solve the sensitivity equations:
+We refer \cite{rawlings:ekerdt:2020} for following derivation. To propagate the gradient we need to solve the sensitivity equations:
 \begin{align}
     \dfrac{\partial V}{\partial \theta^T} &= -2 (\tilde{x} - x)^T \dfrac{\partial x}{\partial \theta^T} \notag \\ 
     S &= \dfrac{\partial x}{\partial \theta^T}
@@ -305,7 +305,9 @@ show a gradient descent update as follows:
 \subsubsection{Backward Sensitivity}
 
 In this section we redefine the objective function as an integral over time.
-The integral formulation allows us to derive the adjoint equation.
+The integral formulation allows us to derive the adjoint equation. We refer \cite{sengupta:friston:penny:2014} 
+that gives a straightforward proof of the adjoint equation than the one in
+\cite{chen:rubanova:bettencourt:duvenaud:2018}.
 Consider following least-squares objective for \cref{eq:ssode} and the Lagrange functional:
 
 \begin{align}
@@ -345,7 +347,7 @@ equations:
 \end{align}
 Referring to \cref{eq:adjoint}, we see $\dfrac{\partial V}{\partial \theta^T} = 
 \dfrac{\partial \mathcal{L}}{\partial \theta^T}$.
-The original NODE paper uses objective function of the form:
+\cite{chen:rubanova:bettencourt:duvenaud:2018} uses objective function of the form:
 \begin{align}
     \min\limits_{\theta}V(x) = \int_0^t \norm{x - \hat{x}}^2 \delta(t) dt
 \end{align}
@@ -363,12 +365,15 @@ and once backward in each optimal iteration. We need a forward pass to store
 the value of $\dfrac{\partial g}{\partial x^T}|_t$ and $x_t$. Also, note that the number 
 of adjoint equations do not increase with parameters (i.e $\lambda \in \R^n$ unlike $S \in \R^{n \times p+1}$). 
 We can evaluate the gradient in one go as shown in \cref{eq:adjointnode}. 
-Some recent solutions to storing intermediate points involve \textit{checkpointing}
-at only few points. However, such a method is not 
+However, such method is not 
 an ultimate panacea. Such systems are still vulnerable to the problems commonly faced by
 numerical ODE solvers like stiffness, accuracy, etc. One can analyze the stiffness
 of the adjoint ODE by simply inspecting the eignevalues of the Jacobian matrix $\dfrac{\partial f}{\partial x^T}$
 at different time points. Sometimes we may end up with noisy gradients which may lead to poor convergence.
+Some recent remedies is solving adjoint equation in multiple time-intervals rather than 
+a single long time-interval
+and storing intermediate points, often called as \textit{checkpointing}.
+ \citep{zhuang:dvornek:li:tatikonda:papademetris:duncan:2020}. 
 
 \begin{figure}[h]
     \centering
@@ -430,8 +435,10 @@ we use a NODE to predict the concentration profiles. The results are shown in
 
 \subsection{Generative latent models based on continuous normalizing flows}
 
-The NODE paper applies the same motivation to develop continuous normalizing flows.
-Interested reader can refer the paper for theorem on instantaneous change of variables.
+The NODE paper applies the same motivation to develop continuous normalizing flows
+\citep{grathwohl:chen:bettencourt:sutskever:duvenaud:2018}.
+Interested reader can refer the paper for proof of theorem on instantaneous change of variables
+\citep{chen:rubanova:bettencourt:duvenaud:2018}.
 The key idea is the neural ODE rhs is trained to conserve the probability density 
 while maximizing log-likelihood to describe the data. The framework can be described 
 as follows:
@@ -480,7 +487,7 @@ The results are shown in \cref{fig:cnf}. The system we solve is:
     \begin{bmatrix} 1 \\ 0 \\ 0 \\ \log{\mathcal{N}([c_A, c_B, c_C]^T, \sigma^2I)} \end{bmatrix} \notag \\
     \min\limits_{\theta} V(x) &= -\log p(x) + \norm{c - \tilde{c}}^2
 \end{align}
-The author would like to draw parallels to the classical Kalman filter that also does the similar job,
+The author would like to draw parallels to the classical Kalman filter \citep{kalman:1960} that also does the similar job,
 but the continuous normalizing flow can be applied to any non-linear dynamical system.
 \begin{figure}[h]
     \centering
@@ -495,9 +502,84 @@ but the continuous normalizing flow can be applied to any non-linear dynamical s
 
 \subsection{Robustness analysis of NODEs}
 
+Well-posedness of an IVP is given by following theorem \citep{ascher:petzold:1998}:
+\begin{theorem}
+    Let $f(t,x)$ be continuous for all $(t,x)$ in a region $\mathcal{D} = {0 \leq t \leq b, |x| \leq \infty}$. 
+    Moreover assume Lipschitz contnuity in $x$, then there exists a constant $L$ such that:
+    \begin{align*}
+        \norm{f(t,x) - f(t,\bar{x})} \leq L \norm{x-\bar{x}}
+    \end{align*}   
+\end{theorem}
+Thus, for ODEs with slightly perturbed initial conditions, the solution should not
+intersect though they can approach the same trajectory. Thus, the solution of an 
+ODE can be sandwhiched between two other perturbed solutions. Refer to \cref{fig:robust} for
+a simple example that again follows the kinetics in \cref{eq:atobtoc}.
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.55\textwidth, page=5]{ABC_plot.pdf} 
+    \caption{Robustness analysis of ODEs. We see that the solution $c_{B2}$ 
+    is sandwiched between two perturbed solutions $c_{B1}, c_{B3}$, 
+    though all approach the same steady-state. Also note that the slightly time-shifted
+    solution appears as a perturbed solution}
+    \label{fig:robust}
+\end{figure}
+Thus, following above idea, \cite{yan:du:tan:feng:2019} developed robust NODEs.
+The idea is the perturbed solution can be seen as time-shifted solution of the
+original ODE sytem. Using uniqueness of solutions, time-invariant NODEs can be regularized by
+adding a penalty term to the loss function. The penalty term is given by:
+\begin{align*}
+    \norm{x(t+T)-x(t)} \leq \norm{\int_t^{t+T} f_{NN}(x, u; \theta) dt}
+\end{align*} 
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.55\textwidth, page=6]{ABC_plot.pdf} 
+    \caption{If we train based only on prediction loss, the model can overfit.
+    However, if we penalize the jacobian of the loss, we can regularize the model
+    to damp the oscillations.}
+    \label{fig:jacobnode}
+\end{figure}
+
+\cite{finlay:jacobsen:nurbekyan:oberman:2020} recommend to penalize the Jacobian of ODE rhs function
+$(\nabla_x f)$ to damp oscillations that happen due to overfitting in neural ODE. A simple example
+using polynomial fit is show in \cref{fig:jacobnode}.
 \section{Conclusions}
+In this review, we explored the mathematical foundations and practical applications 
+of Neural Ordinary Differential Equations (NODEs), highlighting their connection 
+to classical ODE-based modeling and modern machine learning approaches. We first 
+established how NODEs extend traditional discrete architectures such as ResNets 
+and RNNs by formulating neural networks as continuous dynamical systems. This 
+formulation provides a more principled way to model physical and process-driven 
+data while reducing memory constraints through adjoint-based sensitivity analysis.
 
+A key focus of this review was the gradient computation techniques for NODEs. We 
+discussed the forward sensitivity method, which requires solving an augmented ODE 
+system but suffers from an increase in computational cost with the number of parameters. 
+The adjoint sensitivity method, in contrast, offers a more efficient alternative by 
+solving a backward ODE, making NODEs feasible for large-scale learning problems. While 
+adjoint methods significantly improve efficiency, they are not free from challenges, 
+as stiffness and numerical instabilities can still affect convergence.
+
+We also explored continuous normalizing flows (CNFs), where NODEs are utilized to 
+construct generative models that explicitly model probability density evolution. 
+The application of CNFs to chemical kinetics demonstrated how this framework can 
+be extended to physical modeling while drawing conceptual parallels with classical 
+filtering techniques such as the Kalman filter. These methods provide powerful tools 
+for uncertainty quantification and data-driven discovery in dynamical systems.
+
+A critical aspect of NODE-based learning is the robustness of solutions. We examined 
+how NODEs, as solutions to differential equations, inherit the stability properties 
+of the underlying ODEs. In particular, well-posedness ensures that small perturbations 
+in initial conditions do not lead to solution intersections, reinforcing the interpretability 
+and reliability of NODE-based models. This insight was leveraged to propose robust NODEs, 
+where regularization techniques enforce time-invariance by penalizing deviations between time-shifted trajectories.
+
+Overall, NODEs present a compelling framework for modeling dynamical systems in a continuous, 
+memory-efficient, and theoretically grounded manner. 
+
+\section{Data availability and Code}
+All the figures in the review have been generated by the author. The code for the
+figures can be found at  
 
 \newpage
 \FloatBarrier
